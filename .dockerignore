@@ -106,12 +106,12 @@ playground/
 
 # Misc
 .editorconfig
-turbo.json
-tsconfig.json
+# turbo.json  # Commented out - needed for build
+# tsconfig.json  # Commented out - needed for build
 *.tsbuildinfo
 
-# Patches (not needed at runtime)
-patches/
+# Patches - needed for build, keep them
+# patches/
 
 # Container-specific docs (planning files)
 CONTAINER_NOTES.md

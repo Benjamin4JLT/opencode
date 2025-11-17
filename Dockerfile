@@ -12,10 +12,11 @@ WORKDIR /app
 COPY package.json bun.lock bunfig.toml ./
 COPY turbo.json tsconfig.json ./
 
-# Copy workspace package.json files
-COPY packages/opencode/package.json ./packages/opencode/
-COPY packages/console/package.json ./packages/console/ 2>/dev/null || true
-COPY packages/sdk/js/package.json ./packages/sdk/js/ 2>/dev/null || true
+# Copy patches directory (required for bun install)
+COPY patches/ ./patches/
+
+# Copy entire packages directory (simpler and more reliable)
+COPY packages/ ./packages/
 
 # Install dependencies
 RUN bun install --frozen-lockfile
@@ -43,13 +44,16 @@ RUN bun run typecheck || true
 # =============================================================================
 FROM oven/bun:1.3.2-slim AS runner
 
-# Install ttyd for web-based terminal access
+## Install minimal dependencies
 RUN apt-get update && apt-get install -y \
-    ttyd \
-    ca-certificates \
-    curl \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+ca-certificates \
+curl \
+&& apt-get clean \
+&& rm -rf /var/lib/apt/lists/*
+
+# Copy pre-downloaded ttyd binary
+COPY ttyd /usr/local/bin/ttyd
+RUN chmod +x /usr/local/bin/ttyd
 
 WORKDIR /app
 
@@ -57,19 +61,19 @@ WORKDIR /app
 COPY --from=builder /app ./
 
 # Create non-root user for security
-RUN groupadd -r opencode -g 1000 && \
-    useradd -r -g opencode -u 1000 -m -s /bin/bash opencode && \
-    chown -R opencode:opencode /app
+# The bun image already has a 'bun' user with uid/gid 1000
+# Just ensure /app is owned by that user
+RUN chown -R 1000:1000 /app
 
 # Create directories for data persistence
-RUN mkdir -p /home/opencode/.opencode \
-    /home/opencode/.config/opencode \
+RUN mkdir -p /home/bun/.opencode \
+    /home/bun/.config/opencode \
     /app/data \
     /app/logs && \
-    chown -R opencode:opencode /home/opencode /app/data /app/logs
+    chown -R 1000:1000 /home/bun /app/data /app/logs
 
 # Switch to non-root user
-USER opencode
+USER bun
 
 # Set environment variables
 ENV NODE_ENV=production \
@@ -88,12 +92,12 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:${TTYD_PORT}/ || exit 1
 
 # Volume for persistent data
-VOLUME ["/home/opencode/.opencode", "/app/data"]
+VOLUME ["/home/bun/.opencode", "/app/data"]
 
-# Default: Start web terminal that runs OpenCode
-# The -W flag makes ttyd wait for the command
+# Default: Start web terminal with interactive bash shell
+# This gives you a shell to explore and manually run commands
 # Use -c for basic auth: ttyd -c username:password
-CMD ["sh", "-c", "ttyd -p ${TTYD_PORT} -W bun run dev"]
+CMD ["sh", "-c", "ttyd -p ${TTYD_PORT} -W sh -c 'cd /app && bun install && bun run dev'"]
 
 # Alternative startup commands (uncomment as needed):
 
